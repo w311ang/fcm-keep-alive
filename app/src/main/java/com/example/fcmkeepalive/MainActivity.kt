@@ -38,6 +38,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -56,10 +57,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -349,6 +352,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun KeepAliveModeDialog() {
         val options = KeepAliveMode.entries
+        var mcsHeartbeatIntervalText by remember {
+            mutableStateOf(prefs.getMcsHeartbeatIntervalSeconds().toString())
+        }
         AlertDialog(
             onDismissRequest = { isKeepAliveModeDialogVisible = false },
             title = { Text("Keep Alive Mode") },
@@ -371,6 +377,17 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(start = 8.dp)
                             )
                         }
+                        if (mode == KeepAliveMode.MCS_HEARTBEAT && keepAliveModeDialogSelectedIndex == index) {
+                            OutlinedTextField(
+                                value = mcsHeartbeatIntervalText,
+                                onValueChange = { mcsHeartbeatIntervalText = it },
+                                label = { Text("Interval (seconds, 10-3600)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
+                            )
+                        }
                     }
                 }
             },
@@ -379,7 +396,20 @@ class MainActivity : ComponentActivity() {
                     onClick = {
                         val selectedMode = options[keepAliveModeDialogSelectedIndex]
                         prefs.setKeepAliveMode(selectedMode)
-                        showSnackbarMessage("Current mode: ${selectedMode.displayName}")
+                        if (selectedMode == KeepAliveMode.MCS_HEARTBEAT) {
+                            val rawInterval = mcsHeartbeatIntervalText.toIntOrNull()
+                                ?: AppPrefs.MCS_HEARTBEAT_DEFAULT_INTERVAL_SECONDS
+                            val clampedInterval = rawInterval.coerceIn(10, 3600)
+                            prefs.setMcsHeartbeatIntervalSeconds(clampedInterval)
+                            val message = if (rawInterval != clampedInterval) {
+                                "Current mode: ${selectedMode.displayName}, interval clamped to ${clampedInterval}s"
+                            } else {
+                                "Current mode: ${selectedMode.displayName}, interval: ${clampedInterval}s"
+                            }
+                            showSnackbarMessage(message)
+                        } else {
+                            showSnackbarMessage("Current mode: ${selectedMode.displayName}")
+                        }
                         isKeepAliveModeDialogVisible = false
                     }
                 ) {
@@ -429,12 +459,16 @@ class MainActivity : ComponentActivity() {
         val isImeMetaLog = metaLines.any { it == "mode=ime" } && metaLines.any { it.startsWith("imeId=") }
         val hasFcmMeta = hasFcmDiagnosticsMeta(metaLines)
         val hasBatteryAcMeta = isBatteryAcLog(metaMap)
+        val isMcsHeartbeatLog = metaLines.any { it == "mode=mcs_heartbeat" }
         val shouldCondenseImeLog = isImeMetaLog || (isLegacyImeEvent && !hasFcmDiagnosticsMeta(metaLines))
         val contentLines = when {
             entry.event == "fcm_metric" && entry.message == "country_latency" -> {
                 listOf(buildCountryLatencySummary(metaLines))
             }
             shouldCondenseImeLog -> {
+                listOf("$normalizedEvent, ${entry.message}")
+            }
+            isMcsHeartbeatLog -> {
                 listOf("$normalizedEvent, ${entry.message}")
             }
             hasBatteryAcMeta && hasFcmMeta -> {
