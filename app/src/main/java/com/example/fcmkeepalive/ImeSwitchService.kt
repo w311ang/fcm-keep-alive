@@ -569,18 +569,17 @@ class ImeSwitchService : Service() {
         val heartbeatRunnable = object : Runnable {
             override fun run() {
                 if (!isHeartbeatRunning.get()) return
-                ioExecutor.execute {
-                    runShizukuCommandSilently("am broadcast -a com.google.android.intent.action.MCS_HEARTBEAT")
-                    AppLogger.i(
-                        this@ImeSwitchService,
-                        TAG,
-                        "SCREEN_OFF_HEARTBEAT",
-                        "MCS_HEARTBEAT broadcast sent",
-                        buildMcsHeartbeatMeta(EventType.SCREEN_OFF, interval)
-                    )
-                    if (isHeartbeatRunning.get()) {
-                        heartbeatHandler.postDelayed(this, intervalMs)
-                    }
+                val intent = Intent("com.google.android.intent.action.MCS_HEARTBEAT")
+                sendBroadcast(intent)
+                AppLogger.i(
+                    this@ImeSwitchService,
+                    TAG,
+                    "SCREEN_OFF_HEARTBEAT",
+                    "MCS_HEARTBEAT broadcast sent",
+                    buildMcsHeartbeatMeta(EventType.SCREEN_OFF, interval)
+                )
+                if (isHeartbeatRunning.get()) {
+                    heartbeatHandler.postDelayed(this, intervalMs)
                 }
             }
         }
@@ -739,9 +738,8 @@ class ImeSwitchService : Service() {
     }
 
     private fun triggerMcsHeartbeatOnce(): Boolean {
-        val command = "am broadcast -a com.google.android.intent.action.MCS_HEARTBEAT"
-        val result = runShizukuCommand(command)
-        return !result.output.isNullOrBlank() || result.reason.isNullOrBlank()
+        sendBroadcast(Intent("com.google.android.intent.action.MCS_HEARTBEAT"))
+        return true
     }
 
     private fun runGcmDumpsys(): DumpsysResult {
