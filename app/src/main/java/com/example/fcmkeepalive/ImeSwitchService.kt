@@ -48,6 +48,8 @@ class ImeSwitchService : Service() {
     private val isUserPresentDiagnosticsRunning = AtomicBoolean(false)
     private val lastDerivedMappedEvent = AtomicReference<EventType?>(null)
     private val lastDerivedMappedAtMs = AtomicLong(0L)
+    private val heartbeatHandler = Handler(Looper.getMainLooper())
+    private val isHeartbeatRunning = AtomicBoolean(false)
     private val castStateObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             handleCastStateSettingChanged(uri)
@@ -139,6 +141,7 @@ class ImeSwitchService : Service() {
         when (prefs.getKeepAliveMode()) {
             KeepAliveMode.IME -> runImeScreenEventTask(eventType)
             KeepAliveMode.BATTERY_AC -> runBatteryAcScreenEventTask(eventType)
+            KeepAliveMode.MCS_HEARTBEAT -> runMcsHeartbeatScreenEventTask(eventType)
         }
     }
 
@@ -540,6 +543,63 @@ class ImeSwitchService : Service() {
             appendLine("disablePowerSoundsReason=${disablePowerSoundsReason?.ifBlank { "-" } ?: "-"}")
             appendLine("restorePowerSoundsReason=${restorePowerSoundsReason?.ifBlank { "-" } ?: "-"}")
             append("failedStep=${failedStep?.ifBlank { "-" } ?: "-"}")
+        }
+    }
+
+    private fun runMcsHeartbeatScreenEventTask(eventType: EventType) {
+        when (eventType) {
+            EventType.SCREEN_OFF -> startMcsHeartbeatTimer()
+            EventType.USER_PRESENT -> {
+                stopMcsHeartbeatTimer()
+                enqueueUserPresentFcmDiagnostics()
+                recordLastExecution(eventType, "success")
+            }
+        }
+    }
+
+    private fun startMcsHeartbeatTimer() {
+        if (isHeartbeatRunning.get()) {
+            heartbeatHandler.removeCallbacksAndMessages(null)
+        }
+        isHeartbeatRunning.set(true)
+        val interval = prefs.getMcsHeartbeatIntervalSeconds()
+        val intervalMs = interval * 1000L
+        recordLastExecution(EventType.SCREEN_OFF, "started")
+        AppLogger.i(this, TAG, "SCREEN_OFF_HEARTBEAT", "heartbeat timer started", buildMcsHeartbeatMeta(EventType.SCREEN_OFF, interval))
+        val heartbeatRunnable = object : Runnable {
+            override fun run() {
+                if (!isHeartbeatRunning.get()) return
+                ioExecutor.execute {
+                    runShizukuCommandSilently("am broadcast -a com.google.android.intent.action.MCS_HEARTBEAT")
+                    AppLogger.i(
+                        this@ImeSwitchService,
+                        TAG,
+                        "SCREEN_OFF_HEARTBEAT",
+                        "MCS_HEARTBEAT broadcast sent",
+                        buildMcsHeartbeatMeta(EventType.SCREEN_OFF, interval)
+                    )
+                    if (isHeartbeatRunning.get()) {
+                        heartbeatHandler.postDelayed(this, intervalMs)
+                    }
+                }
+            }
+        }
+        heartbeatHandler.post(heartbeatRunnable)
+    }
+
+    private fun stopMcsHeartbeatTimer() {
+        val wasRunning = isHeartbeatRunning.getAndSet(false)
+        heartbeatHandler.removeCallbacksAndMessages(null)
+        if (wasRunning) {
+            AppLogger.i(this, TAG, "USER_PRESENT_HEARTBEAT", "heartbeat timer stopped")
+        }
+    }
+
+    private fun buildMcsHeartbeatMeta(eventType: EventType, intervalSeconds: Int): String {
+        return buildString {
+            appendLine("mode=${KeepAliveMode.MCS_HEARTBEAT.storageValue}")
+            appendLine("event=${eventType.name}")
+            append("intervalSeconds=$intervalSeconds")
         }
     }
 
@@ -1181,6 +1241,7 @@ class ImeSwitchService : Service() {
         runCatching { unregisterReceiver(runtimeScreenReceiver) }
         runCatching { unregisterReceiver(runtimeMirrorReceiver) }
         runCatching { contentResolver.unregisterContentObserver(castStateObserver) }
+        stopMcsHeartbeatTimer()
         ioExecutor.shutdownNow()
         diagnosticsExecutor.shutdownNow()
         super.onDestroy()

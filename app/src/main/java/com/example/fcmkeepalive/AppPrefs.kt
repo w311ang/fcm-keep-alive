@@ -106,6 +106,14 @@ class AppPrefs(context: Context) {
         prefs.edit { putBoolean(KEY_BATTERY_AC_SCREEN_OFF_ARMED, armed) }
     }
 
+    fun getMcsHeartbeatIntervalSeconds(): Int {
+        return prefs.getInt(KEY_MCS_HEARTBEAT_INTERVAL_SECONDS, MCS_HEARTBEAT_DEFAULT_INTERVAL_SECONDS)
+    }
+
+    fun setMcsHeartbeatIntervalSeconds(seconds: Int) {
+        prefs.edit { putInt(KEY_MCS_HEARTBEAT_INTERVAL_SECONDS, seconds) }
+    }
+
     fun registerChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
         prefs.registerOnSharedPreferenceChangeListener(listener)
     }
@@ -129,6 +137,8 @@ class AppPrefs(context: Context) {
         private const val KEY_FCM_NOTIFY_COUNTRY_CODE = "fcm_notify_country_code"
         private const val KEY_COUNTRY_CODE_CACHE_JSON = "country_code_cache_json"
         private const val KEY_BATTERY_AC_SCREEN_OFF_ARMED = "battery_ac_screen_off_armed"
+        private const val KEY_MCS_HEARTBEAT_INTERVAL_SECONDS = "mcs_heartbeat_interval_seconds"
+        const val MCS_HEARTBEAT_DEFAULT_INTERVAL_SECONDS = 60
     }
 }
 
@@ -137,7 +147,8 @@ enum class KeepAliveMode(
     val displayName: String
 ) {
     IME(storageValue = "ime", displayName = "IME Switch"),
-    BATTERY_AC(storageValue = "battery_ac", displayName = "Charging Keep Alive");
+    BATTERY_AC(storageValue = "battery_ac", displayName = "Charging Keep Alive"),
+    MCS_HEARTBEAT(storageValue = "mcs_heartbeat", displayName = "MCS Heartbeat");
 
     companion object {
         fun fromStorageValue(value: String): KeepAliveMode {
