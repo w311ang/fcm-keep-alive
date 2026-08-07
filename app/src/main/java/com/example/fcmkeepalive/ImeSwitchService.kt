@@ -59,6 +59,8 @@ class ImeSwitchService : Service() {
             val action = intent?.action ?: return
             if (action == Intent.ACTION_SCREEN_OFF) {
                 handleScreenEvent(EventType.SCREEN_OFF)
+            } else if (action == Intent.ACTION_SCREEN_ON) {
+                handleScreenEvent(EventType.SCREEN_ON)
             } else if (action == Intent.ACTION_USER_PRESENT) {
                 handleScreenEvent(EventType.USER_PRESENT)
             }
@@ -82,6 +84,7 @@ class ImeSwitchService : Service() {
             runtimeScreenReceiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
             },
             ContextCompat.RECEIVER_NOT_EXPORTED
@@ -139,6 +142,7 @@ class ImeSwitchService : Service() {
         when (prefs.getKeepAliveMode()) {
             KeepAliveMode.IME -> runImeScreenEventTask(eventType)
             KeepAliveMode.BATTERY_AC -> runBatteryAcScreenEventTask(eventType)
+            KeepAliveMode.NATIVE_SCREEN_ON_FCM -> runNativeScreenOnFcmTask(eventType)
         }
     }
 
@@ -512,6 +516,48 @@ class ImeSwitchService : Service() {
         recordLastExecution(eventType, "failed")
     }
 
+    private fun runNativeScreenOnFcmTask(eventType: EventType) {
+        if (eventType != EventType.SCREEN_ON) return
+        val action = "com.google.android.intent.action.MCS_HEARTBEAT"
+        val targetPackage = "com.google.android.gms"
+        try {
+            sendBroadcast(
+                Intent(action).setPackage(targetPackage)
+            )
+            val logMessage = "broadcast dispatched"
+            AppLogger.i(
+                this, TAG, EventType.SCREEN_ON.name, logMessage,
+                buildNativeScreenOnFcmMeta(eventType, action, targetPackage, result = "success")
+            )
+            prefs.setLastSwitchResult("${eventType.name} native fcm heartbeat dispatched")
+            recordLastExecution(eventType, "success")
+        } catch (e: Exception) {
+            val reason = e.message ?: e.javaClass.simpleName
+            AppLogger.e(
+                this, TAG, EventType.SCREEN_ON.name, "broadcast failed: $reason",
+                buildNativeScreenOnFcmMeta(eventType, action, targetPackage, result = "failed: $reason")
+            )
+            prefs.setLastSwitchResult("${eventType.name} native fcm heartbeat failed")
+            prefs.setLastFailureReason(reason)
+            recordLastExecution(eventType, "failed")
+        }
+    }
+
+    private fun buildNativeScreenOnFcmMeta(
+        eventType: EventType,
+        action: String,
+        targetPackage: String,
+        result: String
+    ): String {
+        return buildString {
+            appendLine("mode=${KeepAliveMode.NATIVE_SCREEN_ON_FCM.storageValue}")
+            appendLine("event=${eventType.name}")
+            appendLine("action=$action")
+            appendLine("package=$targetPackage")
+            append("result=$result")
+        }
+    }
+
     private fun buildImeMeta(eventType: EventType, targetImeId: String?): String {
         return buildString {
             appendLine("mode=${KeepAliveMode.IME.storageValue}")
@@ -640,7 +686,7 @@ class ImeSwitchService : Service() {
     }
 
     private fun recordLastExecution(eventType: EventType, result: String) {
-        if (eventType != EventType.SCREEN_OFF) return
+        if (eventType != EventType.SCREEN_OFF && eventType != EventType.SCREEN_ON) return
         prefs.setLastExecutionSnapshot(System.currentTimeMillis(), eventType.name, result)
         refreshNotification()
     }
@@ -1271,6 +1317,7 @@ class ImeSwitchService : Service() {
 
     enum class EventType {
         SCREEN_OFF,
-        USER_PRESENT
+        USER_PRESENT,
+        SCREEN_ON
     }
 }
