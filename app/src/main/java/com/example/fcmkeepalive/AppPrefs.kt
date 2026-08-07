@@ -137,7 +137,8 @@ enum class KeepAliveMode(
     val displayName: String
 ) {
     IME(storageValue = "ime", displayName = "IME Switch"),
-    BATTERY_AC(storageValue = "battery_ac", displayName = "Charging Keep Alive");
+    BATTERY_AC(storageValue = "battery_ac", displayName = "Charging Keep Alive"),
+    NATIVE_SCREEN_ON_FCM(storageValue = "native_screen_on_fcm", displayName = "Screen On FCM Heartbeat");
 
     companion object {
         fun fromStorageValue(value: String): KeepAliveMode {
