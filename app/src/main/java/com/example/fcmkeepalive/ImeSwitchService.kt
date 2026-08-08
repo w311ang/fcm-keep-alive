@@ -1,4 +1,5 @@
-﻿package com.example.fcmkeepalive
+package com.example.fcmkeepalive
+
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -295,6 +296,7 @@ class ImeSwitchService : Service() {
         val targetImeId = when (eventType) {
             EventType.SCREEN_OFF -> ImeHelper.resolveGboardImeId()
             EventType.USER_PRESENT -> prefs.getChosenImeId().trim()
+            EventType.SCREEN_ON -> return
         }
 
         if (targetImeId.isEmpty()) {
@@ -535,6 +537,7 @@ class ImeSwitchService : Service() {
             val reason = e.message ?: e.javaClass.simpleName
             AppLogger.e(
                 this, TAG, EventType.SCREEN_ON.name, "broadcast failed: $reason",
+                e,
                 buildNativeScreenOnFcmMeta(eventType, action, targetPackage, result = "failed: $reason")
             )
             prefs.setLastSwitchResult("${eventType.name} native fcm heartbeat failed")
